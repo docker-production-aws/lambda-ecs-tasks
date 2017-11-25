@@ -100,8 +100,9 @@ def create_task(event, context):
 def handle_create(event, context):
   log.info("Received create event: %s" % format_json(event))
   task = create_task(event, context)
-  start_and_poll(task, context)
-  event['PhysicalResourceId'] = next(t['taskArn'] for t in task['TaskResult']['tasks'])
+  if task['Count'] > 0:
+    start_and_poll(task, context)
+    event['PhysicalResourceId'] = next(t['taskArn'] for t in task['TaskResult']['tasks'])
   return event
 
 # Update requests
@@ -109,6 +110,10 @@ def handle_create(event, context):
 @error_handler
 def handle_update(event, context):
   log.info("Received update event: %s" % format_json(event))
+  task = create_task(event, context)
+  if task['RunOnUpdate'] and task['Count'] > 0:
+    start_and_poll(task, context)
+    event['PhysicalResourceId'] = next(t['taskArn'] for t in task['TaskResult']['tasks'])
   return event
 
 # Delete requests
@@ -116,4 +121,12 @@ def handle_update(event, context):
 @error_handler
 def handle_delete(event, context):
   log.info("Received delete event: %s" % format_json(event))
+  task = create_task(event, context)
+  tasks = task_mgr.list_tasks(cluster=task['Cluster'], startedBy=task['StartedBy'])
+  for t in tasks:
+    task_mgr.stop_task(
+      cluster=task['Cluster'],
+      task=t,
+      reason='Delete request for stack %s' % event['StackId']
+    )
   return event
