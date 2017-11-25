@@ -3,7 +3,7 @@ parent_dir = os.path.abspath(os.path.dirname(__file__))
 vendor_dir = os.path.join(parent_dir, 'vendor')
 sys.path.append(vendor_dir)
 
-import logging, datetime, json
+import logging, datetime, json, time
 from cfn_lambda_handler import Handler, CfnLambdaExecutionTimeout
 from voluptuous import Invalid, MultipleInvalid
 from lib import validate
@@ -41,6 +41,45 @@ def start(task):
     overrides=task['Overrides']
   )
 
+# Checks ECS task has completed
+def check_complete(task_result):
+  if task_result.get('failures'):
+    raise EcsTaskFailureError(task_result)
+  tasks = task_result.get('tasks')
+  return all(t.get('lastStatus') == 'STOPPED' for t in tasks)
+
+# Updates ECS task status
+def describe_tasks(cluster, task_result):
+  tasks = task_result['tasks']
+  task_arns = [t.get('taskArn') for t in tasks]
+  return task_mgr.describe_tasks(cluster=cluster, tasks=task_arns)
+
+# Checks ECS task exit codes
+def check_exit_codes(task_result):
+  tasks = task_result['tasks']
+  non_zero = [
+    c.get('taskArn') 
+    for t in tasks for c in t.get('containers') 
+    if c.get('exitCode') != 0
+  ]
+  if non_zero:
+    raise EcsTaskExitCodeError(tasks, non_zero)
+
+# Polls an ECS task for completion
+def poll(task, remaining_time):
+  poll_interval = 10
+  while True:
+    if remaining_time() < (poll_interval + 5) * 1000:
+      raise CfnLambdaExecutionTimeout(task)
+    if not check_complete(task['TaskResult']):
+      log.info("Task(s) not yet completed, checking again in %s seconds..." % poll_interval)
+      time.sleep(poll_interval)
+      task['TaskResult'] = describe_tasks(task['Cluster'], task['TaskResult'])
+    else:
+      # Task completed
+      check_exit_codes(task['TaskResult'])
+      return task['TaskResult']
+
 # Create requests
 @handler.create
 def handle_create(event, context):
@@ -49,9 +88,24 @@ def handle_create(event, context):
     task = validate(event['ResourceProperties'])
     task['StartedBy'] = get_task_id(event.get('StackId'), event.get('LogicalResourceId'))
     task['TaskResult'] = start(task)
+    task['TaskResult'] = poll(task, context.get_remaining_time_in_millis)
+    log.info("Task completed successfully with result: %s" % format_json(task['TaskResult']))
+    event['PhysicalResourceId'] = next(t['taskArn'] for t in task['TaskResult']['tasks'])
   except (Invalid, MultipleInvalid) as e:
     event['Status'] = "FAILED"
     event['Reason'] = "One or more invalid resource properties %s" % e
+  except EcsTaskExitCodeError as e:
+    event['Status'] = "FAILED"
+    event['Reason'] = "A container failed with a non-zero exit code: %s" % e.non_zero
+  except EcsTaskFailureError as e:
+    event['Status'] = "FAILED"
+    event['Reason'] = "A task failure occurred: %s" % e.failures
+  except (Invalid, MultipleInvalid) as e:
+    event['Status'] = "FAILED"
+    event['Reason'] = "One or more invalid event properties: %s" % e
+  except CfnLambdaExecutionTimeout as e:
+    event['Status'] = "FAILED"
+    event['Reason'] = "Lambda function reached maximum execution time"
   return event
 
 # Update requests
