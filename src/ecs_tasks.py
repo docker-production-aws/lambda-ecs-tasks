@@ -90,10 +90,24 @@ def start_and_poll(task, context):
 # Creates a task object from event data
 def create_task(event, context):
   task = validate(event.get('ResourceProperties'))
+  event['Timeout'] = task['Timeout']
   task['StartedBy'] = get_task_id(event.get('StackId'), event.get('LogicalResourceId'))
   log.info('Received task %s' % format_json(task))
   return task
 
+# Poll requests
+@handler.poll
+@error_handler
+def handle_poll(event, context):
+  log.info('Received poll event %s' % format_json(event))
+  task = event.get('EventState')
+  if not task:
+    raise Exception('Could not retrieve event state on poll event')
+  task['TaskResult'] = poll(task, context.get_remaining_time_in_millis)
+  log.info("Task completed with result: %s" % format_json(task['TaskResult']))
+  event['PhysicalResourceId'] = next(t['taskArn'] for t in task['TaskResult']['tasks'])
+  return event
+  
 # Create requests
 @handler.create
 @error_handler

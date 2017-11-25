@@ -43,7 +43,8 @@ def get_validator():
     Required('Count', default=1): All(ToInt, Range(min=0, max=10)),
     Required('RunOnUpdate', default=True): All(ToBool),
     Required('Instances', default=list()): All(list, Length(max=10)),
-    Required('Overrides', default=dict()): All(DictToString)
+    Required('Overrides', default=dict()): All(DictToString),
+    Required('Timeout', default=3600): All(ToInt, Range(min=60, max=3600))
   }, extra=True)
 
 def validate(data):

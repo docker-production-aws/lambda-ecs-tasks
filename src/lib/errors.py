@@ -18,9 +18,6 @@ def error_handler(func):
     except (Invalid, MultipleInvalid) as e:
       event['Status'] = "FAILED"
       event['Reason'] = "One or more invalid event properties: %s" % e
-    except CfnLambdaExecutionTimeout as e:
-      event['Status'] = "FAILED"
-      event['Reason'] = "Lambda function reached maximum execution time"
     if event.get('Status') == "FAILED":
       log.error(event['Reason'])
     return event
