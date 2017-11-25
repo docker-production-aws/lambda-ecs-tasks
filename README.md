@@ -41,7 +41,6 @@ To complete the build process you need the following tools installed:
 - Python 2.7
 - PIP package manager
 - [AWS CLI](https://aws.amazon.com/cli/)
-- [jq](https://stedolan.github.io/jq/)
 
 Any dependencies need to defined in `src/requirements.txt`.  Note that you do not need to include `boto3`, as this is provided by AWS for Python Lambda functions.
 
