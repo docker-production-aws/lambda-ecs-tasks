@@ -5,6 +5,9 @@ sys.path.append(vendor_dir)
 
 import logging, datetime, json
 from cfn_lambda_handler import Handler, CfnLambdaExecutionTimeout
+from voluptuous import Invalid, MultipleInvalid
+from lib import validate
+
 # Configure logging
 logging.basicConfig()
 log = logging.getLogger()
@@ -18,7 +21,13 @@ handler = Handler()
 # Create requests
 @handler.create
 def handle_create(event, context):
-  log.info("Received create event: %s" % format_json(event))  return event
+  log.info("Received create event: %s" % format_json(event))
+  try:
+    task = validate(event['ResourceProperties'])
+  except (Invalid, MultipleInvalid) as e:
+    event['Status'] = "FAILED"
+    event['Reason'] = "One or more invalid resource properties %s" % e
+  return event
 
 # Update requests
 @handler.update
