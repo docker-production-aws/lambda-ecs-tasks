@@ -80,16 +80,26 @@ def poll(task, remaining_time):
       check_exit_codes(task['TaskResult'])
       return task['TaskResult']
 
+# Starts and ECS task and polls for the task result
+def start_and_poll(task, context):
+  task['TaskResult'] = start(task)
+  task['TaskResult'] = poll(task, context.get_remaining_time_in_millis)
+  log.info("Task completed successfully with result: %s" % format_json(task['TaskResult']))
+
+# Creates a task object from event data
+def create_task(event, context):
+  task = validate(event.get('ResourceProperties'))
+  task['StartedBy'] = get_task_id(event.get('StackId'), event.get('LogicalResourceId'))
+  log.info('Received task %s' % format_json(task))
+  return task
+
 # Create requests
 @handler.create
 def handle_create(event, context):
   log.info("Received create event: %s" % format_json(event))
   try:
-    task = validate(event['ResourceProperties'])
-    task['StartedBy'] = get_task_id(event.get('StackId'), event.get('LogicalResourceId'))
-    task['TaskResult'] = start(task)
-    task['TaskResult'] = poll(task, context.get_remaining_time_in_millis)
-    log.info("Task completed successfully with result: %s" % format_json(task['TaskResult']))
+    task = create_task(event, context)
+    start_and_poll(task, context)
     event['PhysicalResourceId'] = next(t['taskArn'] for t in task['TaskResult']['tasks'])
   except (Invalid, MultipleInvalid) as e:
     event['Status'] = "FAILED"
