@@ -9,6 +9,7 @@ from voluptuous import Invalid, MultipleInvalid
 from lib import validate
 from lib import EcsTaskManager, EcsTaskFailureError, EcsTaskExitCodeError
 from hashlib import md5
+from lib import error_handler
 
 # Configure logging
 logging.basicConfig()
@@ -95,37 +96,24 @@ def create_task(event, context):
 
 # Create requests
 @handler.create
+@error_handler
 def handle_create(event, context):
   log.info("Received create event: %s" % format_json(event))
-  try:
-    task = create_task(event, context)
-    start_and_poll(task, context)
-    event['PhysicalResourceId'] = next(t['taskArn'] for t in task['TaskResult']['tasks'])
-  except (Invalid, MultipleInvalid) as e:
-    event['Status'] = "FAILED"
-    event['Reason'] = "One or more invalid resource properties %s" % e
-  except EcsTaskExitCodeError as e:
-    event['Status'] = "FAILED"
-    event['Reason'] = "A container failed with a non-zero exit code: %s" % e.non_zero
-  except EcsTaskFailureError as e:
-    event['Status'] = "FAILED"
-    event['Reason'] = "A task failure occurred: %s" % e.failures
-  except (Invalid, MultipleInvalid) as e:
-    event['Status'] = "FAILED"
-    event['Reason'] = "One or more invalid event properties: %s" % e
-  except CfnLambdaExecutionTimeout as e:
-    event['Status'] = "FAILED"
-    event['Reason'] = "Lambda function reached maximum execution time"
+  task = create_task(event, context)
+  start_and_poll(task, context)
+  event['PhysicalResourceId'] = next(t['taskArn'] for t in task['TaskResult']['tasks'])
   return event
 
 # Update requests
 @handler.update
+@error_handler
 def handle_update(event, context):
   log.info("Received update event: %s" % format_json(event))
   return event
 
 # Delete requests
 @handler.delete
+@error_handler
 def handle_delete(event, context):
   log.info("Received delete event: %s" % format_json(event))
   return event
