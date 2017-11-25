@@ -1,1 +1,3 @@
 # Add third party packages here
+cfn-lambda-handler
+voluptuous
